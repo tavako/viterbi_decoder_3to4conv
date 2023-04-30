@@ -14,7 +14,7 @@ struct pair
     int total_distance;
 };
 
-int hammingDistance(int *x,int *y, int len)
+int hammingDistance(int *x, int *y, int len)
 {
     int distance = 0;
     for (int i = 0; i < len; i++)
@@ -103,15 +103,15 @@ void encode(int *encoded, int *bits, int len, int *trellis_table, int *outputs_t
     }
 }
 
-void path_metric(struct pair *result, int prev_state,int total_distance, int *bits, int *trellis_table, int *outputs_table)
+void path_metric(struct pair *result, int prev_state, int total_distance, int *bits, int *trellis_table, int *outputs_table)
 {
 
     struct pair p1, p2;
     int min1 = __INT_MAX__;
-    int min1_input,output1 = 0;
-    int min1_next_state , min2_next_state = 0 ;
+    int min1_input, output1 = 0;
+    int min1_next_state, min2_next_state = 0;
     int min2 = __INT_MAX__;
-    int min2_input,output2 = 0;
+    int min2_input, output2 = 0;
     for (int i = 0; i < input_symbol_states; i++)
     {
         int checking_output[] = {*(outputs_table + prev_state * input_symbol_states * 2 + i * 2 + 0), *(outputs_table + prev_state * input_symbol_states * 2 + i * 2 + 1)};
@@ -121,11 +121,11 @@ void path_metric(struct pair *result, int prev_state,int total_distance, int *bi
             output2 = output1;
             min2 = min1;
             min2_input = min1_input;
-            min2_next_state  = min1_next_state;
+            min2_next_state = min1_next_state;
             output1 = total_distance + output;
             min1 = output;
             min1_input = i;
-            min1_next_state =  *(trellis_table + prev_state * input_symbol_states + i) ; 
+            min1_next_state = *(trellis_table + prev_state * input_symbol_states + i);
             continue;
         }
         else if (output < min2)
@@ -133,7 +133,7 @@ void path_metric(struct pair *result, int prev_state,int total_distance, int *bi
             output2 = total_distance + output;
             min2 = output;
             min2_input = i;
-            min2_next_state  = *(trellis_table + prev_state * input_symbol_states + i);
+            min2_next_state = *(trellis_table + prev_state * input_symbol_states + i);
             continue;
         }
     }
@@ -149,49 +149,65 @@ void path_metric(struct pair *result, int prev_state,int total_distance, int *bi
     result[0] = p1;
     result[1] = p2;
 }
-void copy_array(struct pair *dest , struct pair * source , int len){
-for(int i=0;i<len;i++){
-     (dest+i)->current_state = (source+i)->current_state;
-     (dest+i)->previous_state = (source+i)->previous_state;
-     (dest+i)->total_distance = (source+i)->total_distance;
-     (dest+i)->input = (source+i)->input;
-     
-}
-}
-void Decode(struct pair * ans_buffer, int *bits, int *trellis_table, int *outputs_table, int len)
+
+void copy_array(struct pair *dest, struct pair *source, int len)
 {
-    struct pair path1[len+1];
-    struct pair path2[len+1];
-    struct pair start;
-    start.previous_state = 0;
-    start.total_distance = 0;
-    path1[0] = start; 
-    path2[0] = start;
-    struct pair results[2];
-    struct pair results_trace[2];
-    path_metric(results, path1[0].previous_state , path1[0].total_distance , bits, trellis_table, outputs_table);
-    path1[1] = results[0];
-    path2[1] = results[1];
-    for (int i = 1; i < len; i++)
+    for (int i = 0; i < len; i++)
     {
-        path_metric(results, path1[i].current_state,path1[i].total_distance, bits+i*2, trellis_table, outputs_table);
-        path1[i+1] = results[0];
-        path_metric(results_trace , path2[i].current_state ,path2[i].total_distance, bits+i*2 , trellis_table , outputs_table);
-        path2[i+1] = results_trace[0];
-        
-        if (results[1].total_distance < results_trace[0].total_distance){
-            copy_array(path2  , path1 , i+1);
-        }else if(results_trace[1].total_distance < results[0].total_distance){
-            copy_array(path1  , path2 , i+1);
-        } 
-        
+        (dest + i)->current_state = (source + i)->current_state;
+        (dest + i)->previous_state = (source + i)->previous_state;
+        (dest + i)->total_distance = (source + i)->total_distance;
+        (dest + i)->input = (source + i)->input;
     }
-    if (path1[len].total_distance < path2[len].total_distance){
-        copy_array(ans_buffer , path1 , len+1);
+}
+
+void path_trace(int current_bits_iter, int current_state, int *bits, int *trellis_table, int *outputs_table, int *previous_states, int *min_distance, int len)
+{
+    for (int i = 0; i < input_symbol_states; i++)
+    {
+        int checking_output[] = {*(outputs_table + current_state * input_symbol_states * 2 + i * 2 + 0), *(outputs_table + current_state * input_symbol_states * 2 + i * 2 + 1)};
+        int distance = hammingDistance(checking_output, bits, 2) + *(min_distance + current_state * len + current_bits_iter - 1);
+        int destination = *(trellis_table + current_state * input_symbol_states + i);
+        if (*(min_distance + destination * len + current_bits_iter) > distance)
+        {
+            *(min_distance + destination * len + current_bits_iter) = distance;
+            *(previous_states + destination * len + current_bits_iter) = current_state;
+        }
     }
-    else{
-        copy_array(ans_buffer , path2 , len+1);
+}
+
+void Decode(int *previous_states , int *min_distances, int *bits, int *trellis_table, int *outputs_table, int len)
+{
+    
+    for (int i = 0; i < states_count; i++)
+    {
+        *(previous_states + i*len) = 0;
+        *(min_distances + i*len) = 0;
     }
+    for (int j = 1; j < len; j++)
+    {
+        for (int i = 0; i < states_count; i++)
+        {
+            *(previous_states+i*len+j) = __INT_MAX__;
+            *(min_distances+i*len+j) = __INT_MAX__;
+        }
+    }
+    for (int i = 0; i < len; i++)
+    {
+        for (int j = 0; j < states_count; j++)
+        {
+            path_trace(i+1, j, bits + 2 * i, trellis_table, outputs_table, previous_states, min_distances, len);
+        }
+    }
+}
+
+int find_input(int start_state , int target_state , int * trellis_table,int len){
+    for(int i=0 ; i<input_symbol_states ; i++){
+        if(*(trellis_table+ start_state * input_symbol_states + i) == target_state){
+            return i;
+        }
+    }
+    return -10;
 }
 int main()
 {
@@ -215,7 +231,7 @@ int main()
             }
         }
     }
-    check_tables(states_count  , trellis_table , outputs_table);
+    check_tables(states_count, trellis_table, outputs_table);
     int count = sizeof(input_buffer) / sizeof(int) + constraint_length - 1;
     count = count * 2;
     int encoded[count];
@@ -225,16 +241,33 @@ int main()
         printf("%d", encoded[i]);
     }
     printf("\n");
-    *(encoded + 8) = 0;
+
+    encoded[3] = 0;
+    encoded[8] = 0;
+    int len = count/2;
+    int previous_states[states_count][len];
+    int min_distances[states_count][len];
+    Decode(previous_states , min_distances ,  encoded, (int *)trellis_table, (int *)outputs_table, count / 2);
+    //backtrack
+    int states[len];
+    int min = __INT_MAX__ ;
+        for(int j=0 ; j<states_count; j++){
+        if (min > min_distances[j][len-1]){
+            min = min_distances[j][len-1];
+            states[len-1] = j ; 
+        }
+        }
     
-    struct pair ans_buffer[count + 1];
-    Decode(ans_buffer  , encoded  ,(int*)trellis_table ,(int*)outputs_table  , count/2);
-    int result[count/2];
-    for(int i=1 ; i<count/2-1 ; i++){
-        printf("%d," , ans_buffer[i].input);
-        result[i-1] = ans_buffer[i].input;
+    for(int i=len-2 ; i>-1 ; i--){
+        min = __INT_MAX__ ;
+        states[i] = previous_states[states[i+1]][i+1];
+        }
+    int decoded[len];
+    for(int i=0;i<len-1 ; i++){
+        decoded[i] = find_input(states[i] , states[i+1] ,(int*)trellis_table , len );
     }
-    printf("\n");
-    printf("error rate:%d \n" , hammingDistance(input_buffer ,result , count/2-1 ));
+
+//    printf("\n");
+//    printf("error rate:%d \n", hammingDistance(input_buffer, result, count / 2 - 1));
     return 0;
 }
