@@ -277,7 +277,7 @@ void unit_test(int* errors , int number_of_tries, int length_sequence, float per
     int decoded[length_sequence] ; 
     int previous_states[states_count][length_coded];
     int min_distances[states_count][length_coded];
-    int error ; 
+    int total_tries = number_of_tries ;
     while (number_of_tries > 0)
     {
         number_of_tries = number_of_tries - 1;
@@ -286,9 +286,17 @@ void unit_test(int* errors , int number_of_tries, int length_sequence, float per
         inject_error(encoded ,faulty_transmitted , length_coded , percentage_failure);
         decode((int*)previous_states , (int*)min_distances , faulty_transmitted , trellis_table , outputs_table , length_coded/2);
         back_track(decoded , length_coded/2 , (int*)min_distances , trellis_table , (int*)previous_states);
-        error = hammingDistance(sequence , decoded , length_sequence);
+        errors[total_tries - number_of_tries-1] = hammingDistance(sequence , decoded , length_sequence);
     }
     return;
+}
+
+float avg(int* input , int len){
+    int sum;
+    for(int i=0 ; i<len ; i++){
+        sum = sum + *(input + i);
+    }
+    return (float)sum/len; 
 }
 int main()
 {
@@ -311,9 +319,9 @@ int main()
         }
     }
     check_tables(states_count,(int*) trellis_table,(int*) outputs_table);
-    int number_of_tries  = 1;
+    int number_of_tries  = 100;
     int errors[number_of_tries];
-    unit_test(errors , number_of_tries , 10 , 0.3f , (int*) trellis_table , (int*)outputs_table);
+    unit_test(errors , number_of_tries , 10 , 0.1f , (int*) trellis_table , (int*)outputs_table);
     // int count = sizeof(input_buffer) / sizeof(int) + constraint_length - 1;
     // count = count * 2;
     // int encoded[count];
@@ -335,5 +343,6 @@ int main()
     // back_track(decoded , len , min_distances , trellis_table , previous_states);
     // //    printf("\n");
     // //    printf("error rate:%d \n", hammingDistance(input_buffer, result, count / 2 - 1));
+    printf("avg error : %f \n" , avg(errors , number_of_tries));
     return 0;
 }
