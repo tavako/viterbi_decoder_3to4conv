@@ -6,6 +6,8 @@ int input_symbol_states = 8;
 int output_symbol_states = 16;
 int polynomials[2] = {5, 7}; //trellis and output tables provided
 int states_count = 0;
+int n=3;
+int k=4;
 
 struct pair
 {
@@ -15,14 +17,25 @@ struct pair
     int total_distance;
 };
 
-int hammingDistance(int *x, int *y, int len)
+int hammingDistance(int *x, int *y, int len , bool reverse_second)
 {
     int distance = 0;
     for (int i = 0; i < len; i++)
     {
+        if(reverse_second)
+        distance += x[i] != y[len-i-1];
+        else
         distance += x[i] != y[i];
     }
     return distance;
+}
+
+int len_coded(int input){
+    return input*k/n ; 
+}
+
+int len_original(int coded){
+    return coded*n/k;
 }
 
 int hammingWeight(int i)
@@ -43,7 +56,7 @@ void check_tables(int states_count, int * trellis_table, int * outputs_table)
     {
         for (int j = 0; j < input_symbol_states; j++)
         {
-            printf("/ %d,output : %d /", *(trellis_table+i*input_symbol_states+j) , *(outputs_table + i * input_symbol_states  + j));
+            printf("/%d,%dstate:%d,output:%d /",i,j, *(trellis_table+i*input_symbol_states+j) , *(outputs_table + i * input_symbol_states  + j));
         }
         printf("\n");
     }
@@ -61,7 +74,7 @@ int output(int current_state, int input, int *outputs_table)
 
 void decimal_to_bianry(int *bin_output , int input , int len ){
     for (int i=0 ;  i<len ; i++){
-        *(bin_output+i) = input%2;
+        *(bin_output+len-i-1) = input%2;
         input = input/2; 
     }
 } 
@@ -134,7 +147,7 @@ void path_metric(struct pair *result, int prev_state, int total_distance, int *b
     for (int i = 0; i < input_symbol_states; i++)
     {
         int checking_output[] = {*(outputs_table + prev_state * input_symbol_states * 2 + i * 2 + 0), *(outputs_table + prev_state * input_symbol_states * 2 + i * 2 + 1)};
-        int output = hammingDistance(checking_output, bits, 2);
+        int output = hammingDistance(checking_output, bits, 2 , false);
         if (output < min1)
         {
             output2 = output1;
@@ -186,9 +199,9 @@ void path_trace(int current_bits_iter, int current_state, int *bits, int *trelli
     {
         int checking_output[4];
         output_seperate(checking_output , current_state , i , outputs_table);
-        int distance = hammingDistance(checking_output, bits, 4) + *(min_distance + current_state * len + current_bits_iter - 1);
+        int distance = hammingDistance(checking_output, bits, 4 , true) + *(min_distance + current_state * len + current_bits_iter - 1);
         int destination = *(trellis_table + current_state * input_symbol_states + i);
-        if (*(min_distance + destination * len + current_bits_iter) > distance)
+        if (*(min_distance + destination * len + current_bits_iter) > distance && *(min_distance+current_state*len + current_bits_iter-1)<__INT_MAX__)
         {
             *(min_distance + destination * len + current_bits_iter) = distance;
             *(previous_states + destination * len + current_bits_iter) = current_state;
@@ -199,12 +212,7 @@ void path_trace(int current_bits_iter, int current_state, int *bits, int *trelli
 void decode(int *previous_states, int *min_distances, int *bits, int *trellis_table, int *outputs_table, int len)
 {
 
-    for (int i = 0; i < states_count; i++)
-    {
-        *(previous_states + i * len) = 0;
-        *(min_distances + i * len) = 0;
-    }
-    for (int j = 1; j < len; j++)
+    for (int j = 0; j < len; j++)
     {
         for (int i = 0; i < states_count; i++)
         {
@@ -212,21 +220,31 @@ void decode(int *previous_states, int *min_distances, int *bits, int *trellis_ta
             *(min_distances + i * len + j) = __INT_MAX__;
         }
     }
-    for (int i = 0; i < len; i++)
+
+    *(previous_states) = 0;
+    *(min_distances) = 0;
+
+    for (int i = 0; i < len-1; i++)
     {
         for (int j = 0; j < states_count; j++)
         {
             path_trace(i + 1, j, bits + 4 * i, trellis_table, outputs_table, previous_states, min_distances, len);
         }
     }
+
+    *(min_distances+len-1) = 0;
+    for (int i=1 ; i<states_count ; i++){
+        *(min_distances+len*i + len-1) = __INT_MAX__ ; 
+    }
 }
 
-int find_input(int start_state, int target_state, int *trellis_table, int len)
+int find_input(int* buffer , int start_state, int target_state, int *trellis_table, int len , int target_len)
 {
     for (int i = 0; i < input_symbol_states; i++)
     {
         if (*(trellis_table + start_state * input_symbol_states + i) == target_state)
         {
+            decimal_to_bianry(buffer , i , target_len);
             return i;
         }
     }
@@ -282,7 +300,7 @@ int states[len];
     }
     for (int i = 0; i < len - 1; i++)
     {
-        decoded[i] = find_input(states[i], states[i + 1], (int *)trellis_table, len);
+        find_input(decoded+i*3 , states[i], states[i + 1], (int *)trellis_table, len , 3);
     }
 
 }
@@ -290,22 +308,22 @@ int states[len];
 void unit_test(int* errors , int number_of_tries, int length_sequence, float percentage_failure, int *trellis_table, int *outputs_table)
 {
     int sequence[length_sequence];
-    int length_coded = (length_sequence + 2) * 2;
+    int length_coded = len_coded((length_sequence + constraint_length-1));
     int encoded[length_coded];
     int faulty_transmitted[length_coded];
-    int decoded[length_sequence] ; 
-    int previous_states[states_count][length_coded];
-    int min_distances[states_count][length_coded];
+    int decoded[length_sequence+constraint_length-1] ; 
+    int previous_states[states_count][length_coded/k + 1];
+    int min_distances[states_count][length_coded/k + 1];
     int total_tries = number_of_tries ;
     while (number_of_tries > 0)
     {
         number_of_tries = number_of_tries - 1;
         generate_squence(sequence, length_sequence);
-        encode(encoded, sequence, length_sequence, trellis_table, outputs_table, true);
+        encode(encoded, sequence, length_sequence/n, trellis_table, outputs_table, true);
         inject_error(encoded ,faulty_transmitted , length_coded , percentage_failure);
-        decode((int*)previous_states , (int*)min_distances , faulty_transmitted , trellis_table , outputs_table , length_coded/2);
-        back_track(decoded , length_coded/2 , (int*)min_distances , trellis_table , (int*)previous_states);
-        errors[total_tries - number_of_tries-1] = hammingDistance(sequence , decoded , length_sequence);
+        decode((int*)previous_states , (int*)min_distances , faulty_transmitted , trellis_table , outputs_table , length_coded/k+1);
+        back_track(decoded , length_coded/k+1 , (int*)min_distances , trellis_table , (int*)previous_states);
+        errors[total_tries - number_of_tries-1] = hammingDistance(sequence , decoded , length_sequence , false);
     }
     return;
 }
@@ -335,20 +353,29 @@ int main()
     }
     check_tables(states_count,(int*) trellis_table,(int*) outputs_table);
 
-    int input_buffer[12] = {1,0,0,0,1,1,1,0,1,0,1,0};
-    int size_coded = (sizeof(input_buffer)/sizeof(int) + constraint_length-1)*4/3 ;
-    int encoded[size_coded] ; 
-    encode(encoded , input_buffer , (sizeof(input_buffer)/sizeof(int))/3 , (int*) trellis_table , (int*) outputs_table , true);
-    int decoded[15];
-    int previous_states[states_count][size_coded/4];
-    int min_distances[states_count][size_coded/4];
-    decode(previous_states , min_distances , encoded ,(int*) trellis_table ,(int*) outputs_table , size_coded/4 );
-    back_track(decoded , size_coded/4 , min_distances , trellis_table , previous_states);
+    // // test a signle case
+    // int input_buffer[12] = {1,0,0,0,1,1,1,0,1,0,1,0};
+    // int size_coded = (sizeof(input_buffer)/sizeof(int) + constraint_length-1)*4/3 ;
+    // int encoded[size_coded] ; 
+    // encode(encoded , input_buffer , (sizeof(input_buffer)/sizeof(int))/3 , (int*) trellis_table , (int*) outputs_table , true);
+    // int decoded[12];
+    //  encoded[0] = 1;
+    //  encoded[1] = 0;
+    //  encoded[4] = 0;
+    // int previous_states[states_count][size_coded/4];
+    // int min_distances[states_count][size_coded/4];
+    // decode(previous_states , min_distances , encoded ,(int*) trellis_table ,(int*) outputs_table , size_coded/4 );
+    // back_track(decoded , size_coded/4 , min_distances , trellis_table , previous_states);
+    // printf("error %d \n" , hammingDistance(input_buffer , decoded , 12 , false));
 
-    // int number_of_tries  = 100;
-    // int errors[number_of_tries];
-    // unit_test(errors , number_of_tries , 10 , 0.1f , (int*) trellis_table , (int*)outputs_table);
-    // printf("avg error : %f \n" , avg(errors , number_of_tries));
-    
+    int number_of_tries  = 1000;
+    int errors[number_of_tries];
+    unit_test(errors , number_of_tries , 12 , 0.05f , (int*) trellis_table , (int*)outputs_table);
+    printf("avg error : %f \n" , avg(errors , number_of_tries));
+    int counter = 0 ;
+    for (int i=0;i<number_of_tries;i++){
+        if(errors[i] == 0 )
+        counter++;
+    }
     return 0;
 }
