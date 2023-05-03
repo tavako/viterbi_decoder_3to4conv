@@ -206,10 +206,25 @@ void path_trace(int current_bits_iter, int current_state, int *bits, int *trelli
         output_seperate(checking_output, current_state, i, outputs_table);
         int distance = hammingDistance(checking_output, bits, 4, true) + *(min_distance + current_state * len + current_bits_iter - 1);
         int destination = *(trellis_table + current_state * input_symbol_states + i);
-        if (*(min_distance + destination * len + current_bits_iter) > distance && *(min_distance + current_state * len + current_bits_iter - 1) < __INT_MAX__)
+        if (*(min_distance + destination * len + current_bits_iter) >= distance && *(min_distance + current_state * len + (current_bits_iter - 1)) < __INT_MAX__)
         {
-            *(min_distance + destination * len + current_bits_iter) = distance;
-            *(previous_states + destination * len + current_bits_iter) = current_state;
+            if (distance == *(min_distance + destination * len + current_bits_iter))
+            {
+                // new multipath
+                for (int i = 0; i < states_count; i++)
+                {
+                    if (*(previous_states + destination * len * states_count + current_bits_iter * states_count + i) == __INT_MAX__)
+                    {
+                        *(previous_states + destination * len * states_count + current_bits_iter * states_count + i) == current_state;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                *(min_distance + destination * len + current_bits_iter) = distance;
+                *(previous_states + destination * len * states_count + current_bits_iter * states_count) = current_state;
+            }
         }
     }
 }
@@ -221,8 +236,11 @@ void decode(int *previous_states, int *min_distances, int *bits, int *trellis_ta
     {
         for (int i = 0; i < states_count; i++)
         {
-            *(previous_states + i * len + j) = __INT_MAX__;
             *(min_distances + i * len + j) = __INT_MAX__;
+            for (int k = 0; k < states_count; k++)
+            {
+                *(previous_states + i * len * states_count + j * states_count + k) = __INT_MAX__;
+            }
         }
     }
 
@@ -237,10 +255,10 @@ void decode(int *previous_states, int *min_distances, int *bits, int *trellis_ta
         }
     }
 
-    *(min_distances + len - 1) = 0;
+    *(min_distances + (len - 1)) = 0;
     for (int i = 1; i < states_count; i++)
     {
-        *(min_distances + len * i + len - 1) = __INT_MAX__;
+        *(min_distances + len * i + (len - 1)) = __INT_MAX__;
     }
 }
 
@@ -304,12 +322,55 @@ void back_track(int *decoded, int len, int *min_distances, int *trellis_table, i
 
     for (int i = len - 2; i > -1; i--)
     {
+        // handle multipath here
         min = __INT_MAX__;
-        states[i] = *(previous_states + states[i + 1] * len + (i + 1));
+        states[i] = *(previous_states + states[i + 1] * len * states_count + (i + 1) * states_count);
     }
     for (int i = 0; i < len - 1; i++)
     {
         find_input(decoded + i * 3, states[i], states[i + 1], (int *)trellis_table, len, 3);
+    }
+}
+void back_track_multipath(int *decoded, int len, int *min_distances, int *trellis_table, int *previous_states, int max_paths_count)
+{
+    int current_num_paths = 1;
+    int states[max_paths_count][len];
+    int min = __INT_MAX__;
+    for (int j = 0; j < states_count; j++)
+    {
+        if (min > *(min_distances + j * len + len - 1))
+        {
+            min = *(min_distances + j * len + len - 1);
+            for (int i = 0; i < states_count; i++)
+            {
+                states[i][len - 1] = j;
+            }
+        }
+    }
+
+    for (int i = len - 2; i > -1; i--)
+    {
+        // handle multipath here
+        int temp_max_path = current_num_paths ; 
+        min = __INT_MAX__;
+        states[0][i] = *(previous_states + states[0][i + 1] * len * states_count + (i + 1) * states_count);
+        for (int j = 1; j < current_num_paths; j++)
+        {
+            states[j][i] = *(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count);
+            for (int k = 1; k < states_count; k++)
+            {
+                if (*(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count + k) < __INT_MAX__){
+                    //new path
+                    temp_max_path = temp_max_path +1;
+                    states[temp_max_path-1][i] = *(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count + k);
+                }
+            }
+        }
+        current_num_paths = max_paths_count  ;
+    }
+    for (int i = 0; i < len - 1; i++)
+    {
+        find_input(decoded + i * 3, states[0][i], states[0][i + 1], (int *)trellis_table, len, 3);
     }
 }
 
@@ -330,8 +391,8 @@ void unit_test(int *errors, int number_of_tries, int length_sequence, float perc
         encode(encoded, sequence, length_sequence / n, trellis_table, outputs_table, true);
         inject_error(encoded, faulty_transmitted, length_coded, percentage_failure);
         decode((int *)previous_states, (int *)min_distances, faulty_transmitted, trellis_table, outputs_table, length_coded / k + 1);
-          if(total_tries - number_of_tries - 1 == 7)
-        printf("gotha!");
+        if (total_tries - number_of_tries - 1 == 7)
+            printf("gotha!");
         back_track(decoded, length_coded / k + 1, (int *)min_distances, trellis_table, (int *)previous_states);
         errors[total_tries - number_of_tries - 1] = hammingDistance(sequence, decoded, length_sequence, false);
     }
@@ -364,27 +425,27 @@ int main()
     check_tables(states_count, (int *)trellis_table, (int *)outputs_table);
 
     // test a signle case
-    // int input_buffer[12] = {1,0,1,0,0,1,0,0,0,1,1,1};
-    // int size_coded = (sizeof(input_buffer)/sizeof(int) + constraint_length-1)*4/3 ;
-    // int encoded[size_coded] ;
-    // encode(encoded , input_buffer , (sizeof(input_buffer)/sizeof(int))/3 , (int*) trellis_table , (int*) outputs_table , true);
-    // encoded[7] = 0;
-    // int decoded[12];
-    // int previous_states[states_count][size_coded/4+1];
-    // int min_distances[states_count][size_coded/4+1];
-    // decode(previous_states , min_distances , encoded ,(int*) trellis_table ,(int*) outputs_table , size_coded/4+1 );
-    // back_track(decoded , size_coded/4+1 , min_distances , trellis_table , previous_states);
-    // printf("error %d \n" , hammingDistance(input_buffer , decoded , 12 , false));
+    int input_buffer[12] = {1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1};
+    int size_coded = (sizeof(input_buffer) / sizeof(int) + constraint_length - 1) * 4 / 3;
+    int encoded[size_coded];
+    encode(encoded, input_buffer, (sizeof(input_buffer) / sizeof(int)) / 3, (int *)trellis_table, (int *)outputs_table, true);
+    encoded[7] = 0;
+    int decoded[12];
+    int previous_states[states_count][size_coded / 4 + 1][states_count];
+    int min_distances[states_count][size_coded / 4 + 1];
+    decode(previous_states, min_distances, encoded, (int *)trellis_table, (int *)outputs_table, size_coded / 4 + 1);
+    back_track(decoded, size_coded / 4 + 1, min_distances, trellis_table, previous_states);
+    printf("error %d \n", hammingDistance(input_buffer, decoded, 12, false));
 
-    int number_of_tries = 1000;
-    int errors[number_of_tries];
-    unit_test(errors, number_of_tries, 12, 0.05f, (int *)trellis_table, (int *)outputs_table);
-    printf("avg error : %f \n", avg(errors, number_of_tries));
-    int counter = 0;
-    for (int i = 0; i < number_of_tries; i++)
-    {
-        if (errors[i] == 0)
-            counter++;
-    }
+    // int number_of_tries = 1000;
+    // int errors[number_of_tries];
+    // unit_test(errors, number_of_tries, 12, 0.05f, (int *)trellis_table, (int *)outputs_table);
+    // printf("avg error : %f \n", avg(errors, number_of_tries));
+    // int counter = 0;
+    // for (int i = 0; i < number_of_tries; i++)
+    // {
+    //     if (errors[i] == 0)
+    //         counter++;
+    // }
     return 0;
 }
