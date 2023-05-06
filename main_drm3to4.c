@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <memory.h>
 int constraint_length = 4;
 int input_symbol_states = 8;
 int output_symbol_states = 16;
@@ -8,6 +9,7 @@ int polynomials[2] = {5, 7}; // trellis and output tables provided
 int states_count = 0;
 int n = 3;
 int k = 4;
+const int REJECT_CODE = -10;
 
 struct pair
 {
@@ -206,16 +208,16 @@ void path_trace(int current_bits_iter, int current_state, int *bits, int *trelli
         output_seperate(checking_output, current_state, i, outputs_table);
         int distance = hammingDistance(checking_output, bits, 4, true) + *(min_distance + current_state * len + current_bits_iter - 1);
         int destination = *(trellis_table + current_state * input_symbol_states + i);
-        if (*(min_distance + destination * len + current_bits_iter) >= distance && *(min_distance + current_state * len + (current_bits_iter - 1)) < __INT_MAX__)
+        if ((*(min_distance + destination * len + current_bits_iter) >= distance) && *(min_distance + current_state * len + (current_bits_iter - 1)) < __INT_MAX__)
         {
             if (distance == *(min_distance + destination * len + current_bits_iter))
             {
                 // new multipath
-                for (int i = 0; i < states_count; i++)
+                for (int j = 0; j < states_count; j++)
                 {
-                    if (*(previous_states + destination * len * states_count + current_bits_iter * states_count + i) == __INT_MAX__)
+                    if (*(previous_states + destination * len * states_count + current_bits_iter * states_count + j) == __INT_MAX__)
                     {
-                        *(previous_states + destination * len * states_count + current_bits_iter * states_count + i) == current_state;
+                        *(previous_states + destination * len * states_count + current_bits_iter * states_count + j) = current_state;
                         break;
                     }
                 }
@@ -224,6 +226,10 @@ void path_trace(int current_bits_iter, int current_state, int *bits, int *trelli
             {
                 *(min_distance + destination * len + current_bits_iter) = distance;
                 *(previous_states + destination * len * states_count + current_bits_iter * states_count) = current_state;
+                for (int j = 1; j < states_count; j++)
+                {
+                    *(previous_states + destination * len * states_count + current_bits_iter * states_count + j) = __INT_MAX__;
+                }
             }
         }
     }
@@ -331,6 +337,24 @@ void back_track(int *decoded, int len, int *min_distances, int *trellis_table, i
         find_input(decoded + i * 3, states[i], states[i + 1], (int *)trellis_table, len, 3);
     }
 }
+// returns index path to modify
+int reservoir_selection(int iter, int target_count)
+{
+    if (iter < target_count)
+    {
+        return iter;
+    }
+    else
+    {
+        int r = rand() % (iter);
+        if (r < target_count)
+        {
+            return r;
+        }
+        return REJECT_CODE;
+    }
+}
+
 void back_track_multipath(int *decoded, int len, int *min_distances, int *trellis_table, int *previous_states, int max_paths_count)
 {
     int current_num_paths = 1;
@@ -341,36 +365,46 @@ void back_track_multipath(int *decoded, int len, int *min_distances, int *trelli
         if (min > *(min_distances + j * len + len - 1))
         {
             min = *(min_distances + j * len + len - 1);
-            for (int i = 0; i < states_count; i++)
-            {
-                states[i][len - 1] = j;
-            }
+            states[0][len - 1] = j;
         }
     }
-
+    int iter = 0;
     for (int i = len - 2; i > -1; i--)
     {
         // handle multipath here
-        int temp_max_path = current_num_paths ; 
-        min = __INT_MAX__;
-        states[0][i] = *(previous_states + states[0][i + 1] * len * states_count + (i + 1) * states_count);
-        for (int j = 1; j < current_num_paths; j++)
+        int temp_max_path = current_num_paths;
+        for (int j = 0; j < current_num_paths; j++)
         {
             states[j][i] = *(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count);
             for (int k = 1; k < states_count; k++)
             {
-                if (*(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count + k) < __INT_MAX__){
-                    //new path
-                    temp_max_path = temp_max_path +1;
-                    states[temp_max_path-1][i] = *(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count + k);
+                if (*(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count + k) < __INT_MAX__)
+                {
+                    // new path
+                    iter = iter + 1;
+                    int loc = reservoir_selection(iter, max_paths_count);
+                    if (loc == REJECT_CODE)
+                        continue;
+                    if (iter < max_paths_count)
+                        temp_max_path = temp_max_path + 1;
+                    states[loc][i] = *(previous_states + states[j][i + 1] * len * states_count + (i + 1) * states_count + k);
+                    // copy its hoitory that we have diverged from
+                    for (int cp_iter = len - 1; cp_iter > i; cp_iter--)
+                    {
+                        states[loc][cp_iter] = states[j][cp_iter];
+                    }
+                }
+                else
+                {
+                    break;
                 }
             }
         }
-        current_num_paths = max_paths_count  ;
+        current_num_paths = temp_max_path;
     }
     for (int i = 0; i < len - 1; i++)
     {
-        find_input(decoded + i * 3, states[0][i], states[0][i + 1], (int *)trellis_table, len, 3);
+        find_input((decoded + i * 3), states[0][i], states[0][i + 1], (int *)trellis_table, len, 3);
     }
 }
 
@@ -409,6 +443,59 @@ float avg(int *input, int len)
     return (float)sum / len;
 }
 
+void dotxor(int *target, int *a, int *b, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        *(target + i) = *(a + i) ^ *(b + i);
+    }
+}
+
+void shift_left(int *target, int *source, int len)
+{
+    for (int i = 0; i < len - 1; i++)
+    {
+        *(target + i) = *(target + i + 1);
+    }
+    *(target + len - 1) = *(source);
+}
+
+void crc(int *buffer, int *input, int *codeWord, int len_input, int len_codeWord)
+{
+    dotxor(buffer, input, codeWord, len_codeWord);
+    int i = len_codeWord;
+    while (i < len_input)
+    {
+        // if leftmost bit is 1 do the xor otherwise shift by 1 until we reach end of sequence
+        while (*(buffer) != 1)
+        {
+            shift_left(buffer, (input + i), len_codeWord);
+            i = i + 1;
+        }
+        dotxor(buffer, buffer, codeWord, len_codeWord);
+    }
+}
+void calc_crc(int *buffer, int *input, int *codeWord, int len_input, int len_codeWord)
+{
+    int len_extended = len_input + len_codeWord - 1;
+    memset(buffer, 0, len_extended * sizeof(int));
+    memcpy(buffer, input, len_input * sizeof(int));
+    int internal_buffer[len_codeWord];
+    crc(internal_buffer, buffer, codeWord, len_extended, len_codeWord);
+    memcpy(buffer + len_input, internal_buffer + 1, sizeof(int) * (len_codeWord - 1));
+}
+bool check_crc(int *input, int *codeWord, int len, int len_codeWord)
+{
+    int buffer[len_codeWord];
+    crc(buffer, input, codeWord, len, len_codeWord);
+    for (int i = 0; i < len_codeWord; i++)
+    {
+        if (buffer[i] == 1)
+            return false;
+    }
+    return true;
+}
+
 int main()
 {
     states_count = 1 << (constraint_length - 1);
@@ -425,18 +512,24 @@ int main()
     check_tables(states_count, (int *)trellis_table, (int *)outputs_table);
 
     // test a signle case
-    int input_buffer[12] = {1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1};
+    int input_buffer[141];
+    generate_squence(input_buffer, 141);
     int size_coded = (sizeof(input_buffer) / sizeof(int) + constraint_length - 1) * 4 / 3;
     int encoded[size_coded];
     encode(encoded, input_buffer, (sizeof(input_buffer) / sizeof(int)) / 3, (int *)trellis_table, (int *)outputs_table, true);
-    encoded[7] = 0;
-    int decoded[12];
+
+    int decoded[144];
     int previous_states[states_count][size_coded / 4 + 1][states_count];
     int min_distances[states_count][size_coded / 4 + 1];
-    decode(previous_states, min_distances, encoded, (int *)trellis_table, (int *)outputs_table, size_coded / 4 + 1);
-    back_track(decoded, size_coded / 4 + 1, min_distances, trellis_table, previous_states);
-    printf("error %d \n", hammingDistance(input_buffer, decoded, 12, false));
-
+    decode((int *)previous_states, (int *)min_distances, encoded, (int *)trellis_table, (int *)outputs_table, size_coded / 4 + 1);
+    back_track_multipath(decoded, size_coded / 4 + 1, (int *)min_distances, (int *)trellis_table, (int *)previous_states, 10);
+    printf("error %d \n", hammingDistance(input_buffer, decoded, 141, false));
+    int buffer[11];
+    int input[] = {1, 0, 0, 1, 0, 1, 1, 0, 1};
+    int codeWord[] = {1, 0, 1};
+    calc_crc(buffer, input, codeWord, 9, 3);
+    input[3] = 0;
+    bool res = check_crc(buffer, codeWord, 11, 3);
     // int number_of_tries = 1000;
     // int errors[number_of_tries];
     // unit_test(errors, number_of_tries, 12, 0.05f, (int *)trellis_table, (int *)outputs_table);
