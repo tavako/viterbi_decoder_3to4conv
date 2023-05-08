@@ -541,7 +541,6 @@ float avg(int *input, int len)
     return (float)sum / len;
 }
 
-
 void unit_test_crc_matching(int * errors ,int number_of_tries, int length_sequence, float percentage_failure, int *trellis_table, int *outputs_table ){
     int max_number_paths = 10;
     int current_num_paths = 0;
@@ -558,16 +557,14 @@ void unit_test_crc_matching(int * errors ,int number_of_tries, int length_sequen
     int min_distances[states_count][length_coded / k + 1];
     int total_tries = number_of_tries;
     int codeWord[] = {1,0,1,1,0};
-    int len_codeWord = 3;
+    int len_codeWord = 5;
     bool not_found = false;
     int counter_not_found = 0;
     while (number_of_tries > 0)
     {
+        current_num_paths = 0;
         number_of_tries = number_of_tries - 1;
         generate_squence(sequence, length_sequence);
-        if(number_of_tries == 998){
-            printf("gotha");
-        }
         calc_crc(extended_sequence , sequence  , codeWord , length_sequence - len_codeWord + 1 , len_codeWord);
         encode(encoded, extended_sequence, length_sequence / n, trellis_table, outputs_table, true);
         inject_error(encoded, faulty_transmitted, length_coded, percentage_failure);
@@ -577,7 +574,7 @@ void unit_test_crc_matching(int * errors ,int number_of_tries, int length_sequen
         check_states_crc(codeWord , len_codeWord ,(int*) states , current_num_paths, trellis_table , length_coded/k+1 , decoded , &not_found , length_sequence);
         if(not_found)
         counter_not_found += 1;
-        else errors[total_tries - number_of_tries - 1] = hammingDistance(extended_sequence, decoded, length_sequence, false);
+        errors[total_tries - number_of_tries - 1] = hammingDistance(extended_sequence, decoded, length_sequence, false);
     }
     return;
 }
@@ -638,7 +635,7 @@ int main()
     //unit test , crc matching multipath
     int number_of_tries = 1000;
     int errors[number_of_tries];
-    unit_test_crc_matching(errors , number_of_tries , 12 , 0.00f , (int *) trellis_table , (int *) outputs_table);
+    unit_test_crc_matching(errors , number_of_tries , 141 , 0.03f , (int *) trellis_table , (int *) outputs_table);
     printf("avg error : %f \n", avg(errors, number_of_tries));
     int counter = 0;
     for (int i = 0; i < number_of_tries; i++)
