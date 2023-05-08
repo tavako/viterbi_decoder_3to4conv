@@ -389,20 +389,22 @@ void crc(int *buffer, int *input, int *codeWord, int len_input, int len_codeWord
 {
     
     memcpy(buffer , input , len_codeWord * sizeof(int));
-    int i=len_codeWord;
+    int i=len_codeWord-1;
     int len_bin = len_bin_number(buffer , len_codeWord);
     bool break_inner_loop = false;
-    while (i < len_input-1)
+    while (i < len_input)
     {
         // if leftmost bit is 1 do the xor otherwise shift by 1 until we reach end of sequence
         while (*(buffer) != 1)
         {
+            i = i+1;
+            if(i<len_input){
             shift_left(buffer, (input + i), len_codeWord);
             len_bin = len_bin -1;
-            if(i<len_input-1)i = i + 1;
+            }
             else {
-                if(len_bin != 0 ){
-                break_inner_loop = true;}
+               // if(len_bin != 0 ){
+                break_inner_loop = true;
                 break;
             }
         }
@@ -489,7 +491,7 @@ void back_track_multipath(int *states , int * current_num_paths , int len, int *
     
 }
 
-void check_states_crc(int *codeWord , int len_codeWord , int * states , int num_paths , int *trellis_table , int num_states , int* buffer_result, bool* not_found){
+void check_states_crc(int *codeWord , int len_codeWord , int * states , int num_paths , int *trellis_table , int num_states , int* buffer_result, bool* not_found , int len_sequence){
     
     bool found = false;
     for(int j=0 ; j<num_paths ; j++){
@@ -497,14 +499,13 @@ void check_states_crc(int *codeWord , int len_codeWord , int * states , int num_
      for (int i = 0; i < num_states - 1; i++)
     {
         find_input((buffer_result + i * 3), *(states+j*num_states+i), *(states+j*num_states+i + 1), (int *)trellis_table,num_states, 3);
-        if(check_crc(buffer_result , codeWord , num_states  , len_codeWord )){
+    }
+    if(check_crc(buffer_result , codeWord , len_sequence , len_codeWord )){
             found = true;
             break;
-        } 
-    }
-    if(found)break;
-    }
-    *not_found = true;
+        }
+    } 
+    *not_found = !found;
 }
 
 void unit_test(int *errors, int number_of_tries, int length_sequence, float percentage_failure, int *trellis_table, int *outputs_table)
@@ -564,21 +565,19 @@ void unit_test_crc_matching(int * errors ,int number_of_tries, int length_sequen
     {
         number_of_tries = number_of_tries - 1;
         generate_squence(sequence, length_sequence);
-        if(number_of_tries == 992){
+        if(number_of_tries == 998){
             printf("gotha");
         }
         calc_crc(extended_sequence , sequence  , codeWord , length_sequence - len_codeWord + 1 , len_codeWord);
-        if(!check_crc(extended_sequence , codeWord , 12 , len_codeWord)){
-            printf("problem");
-        }
         encode(encoded, extended_sequence, length_sequence / n, trellis_table, outputs_table, true);
         inject_error(encoded, faulty_transmitted, length_coded, percentage_failure);
         decode((int *)previous_states, (int *)min_distances, faulty_transmitted, trellis_table, outputs_table, length_coded / k + 1);
         back_track_multipath((int*)states,&current_num_paths ,length_coded / k + 1, (int *)min_distances, trellis_table, (int *)previous_states , max_number_paths);
         not_found = false;
-        check_states_crc(codeWord , len_codeWord ,(int*) states , current_num_paths, trellis_table , length_coded/k+1 , decoded , &not_found);
-        if(not_found)counter_not_found += 1;
-        else errors[total_tries - number_of_tries - 1] = hammingDistance(sequence, decoded, length_sequence, false);
+        check_states_crc(codeWord , len_codeWord ,(int*) states , current_num_paths, trellis_table , length_coded/k+1 , decoded , &not_found , length_sequence);
+        if(not_found)
+        counter_not_found += 1;
+        else errors[total_tries - number_of_tries - 1] = hammingDistance(extended_sequence, decoded, length_sequence, false);
     }
     return;
 }
@@ -639,7 +638,7 @@ int main()
     //unit test , crc matching multipath
     int number_of_tries = 1000;
     int errors[number_of_tries];
-    unit_test_crc_matching(errors , number_of_tries , 12 , 0.00f , (int *) trellis_table , (int *) output);
+    unit_test_crc_matching(errors , number_of_tries , 12 , 0.00f , (int *) trellis_table , (int *) outputs_table);
     printf("avg error : %f \n", avg(errors, number_of_tries));
     int counter = 0;
     for (int i = 0; i < number_of_tries; i++)
