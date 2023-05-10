@@ -542,7 +542,7 @@ float avg(int *input, int len)
 }
 
 void unit_test_crc_matching(int * errors ,int number_of_tries, int length_sequence, float percentage_failure, int *trellis_table, int *outputs_table ){
-    int max_number_paths = 10;
+    int max_number_paths = 200;
     int current_num_paths = 0;
     int sequence[length_sequence];
     //we replace the len_codeWord -1 finishing bits with 0s then crc code it
@@ -556,8 +556,8 @@ void unit_test_crc_matching(int * errors ,int number_of_tries, int length_sequen
     int previous_states[states_count][length_coded / k + 1][states_count];
     int min_distances[states_count][length_coded / k + 1];
     int total_tries = number_of_tries;
-    int codeWord[] = {1,0,1,1,0};
-    int len_codeWord = 5;
+    int codeWord[] = {1,0,1,1,0,1,1,0,0,0,1,1,0,1,0,1,0,0,1,0,0,1,1,0,1,0,0,1,0,1,1,1};
+    int len_codeWord = 32;
     bool not_found = false;
     int counter_not_found = 0;
     while (number_of_tries > 0)
@@ -635,7 +635,7 @@ int main()
     //unit test , crc matching multipath
     int number_of_tries = 1000;
     int errors[number_of_tries];
-    unit_test_crc_matching(errors , number_of_tries , 141 , 0.03f , (int *) trellis_table , (int *) outputs_table);
+    unit_test_crc_matching(errors , number_of_tries , 141 , 0.02f , (int *) trellis_table , (int *) outputs_table);
     printf("avg error : %f \n", avg(errors, number_of_tries));
     int counter = 0;
     for (int i = 0; i < number_of_tries; i++)
